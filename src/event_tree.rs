@@ -13,6 +13,11 @@ pub struct EventTree<T> {
 /// The functions are thus simulation events. T must implement Copy (or be implicitly copyable)
 /// for moving ownership into alternative event branches.
 impl<T: Copy> EventTree<T> {
+    /// Construct a new EventTree<T> node with given Operation<T> function reference
+    pub fn new(operation: Operation<T>) -> EventTree<T> {
+        EventTree { operation, branches: Vec::new()}
+    }
+
     /// Attach another EventTree<T> into self.
     fn add_branch(&mut self, branch: EventTree<T>) {
         self.branches.push(branch)
@@ -82,22 +87,10 @@ mod tests {
 
     fn increment(x: i32) -> i32 { x+1 }
     fn create_fixture() -> EventTree<i32> {
-        let mut root = EventTree {
-            operation: increment,
-            branches: Vec::new()
-        };
-        let mut s1 = EventTree {
-            operation: increment,
-            branches: Vec::new()
-        };
-        let b1 = EventTree {
-            operation: increment,
-            branches: Vec::new()
-        };
-        let b2 = EventTree {
-            operation: increment,
-            branches: Vec::new()
-        };
+        let mut root = EventTree::new(increment);
+        let mut s1 = EventTree::new(increment);
+        let b1 = EventTree::new(increment);
+        let b2 = EventTree::new(increment);
         s1.add_branch(b1);
         s1.add_branch(b2);
         root.add_branch(s1);
