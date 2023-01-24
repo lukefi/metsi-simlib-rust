@@ -66,17 +66,19 @@ impl<T: Copy> EventTree<T> {
     fn evaluate_depth(&self, payload: T) -> OperationResults<T> {
         let mut results = OperationResults::new();
         let current = (self.operation)(payload);
-        if self.branches.len() == 0 {
-            results.push(current)
-        }
-        else if self.branches.len() == 1 {
-            results.extend(self.branches.first().unwrap().evaluate_depth(current))
-        }
-        else if self.branches.len() > 1 {
-            for branch in &self.branches {
-                results.extend(branch.evaluate_depth(current))
+        let mut extension = match &self.branches {
+            branches if branches.len() == 0 => {
+                vec![current]
             }
-        }
+            branches => {
+                branches
+                    .iter()
+                    .map(|branch| branch.evaluate_depth(current))
+                    .flatten()
+                    .collect()
+            }
+        };
+        results.extend(extension);
         results
     }
 }
