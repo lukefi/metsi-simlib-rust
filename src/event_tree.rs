@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 type Operation<T> = fn(T) -> T;
 type OperationChain<T> = Vec<Operation<T>>;
 type OperationResults<T> = Vec<T>;
@@ -5,7 +8,7 @@ type UniqueChains<T> = Vec<OperationChain<T>>;
 
 pub struct EventTree<T> {
     operation: Operation<T>,
-    branches: Vec<EventTree<T>>
+    branches: Vec<Rc<RefCell<EventTree<T>>>>
 }
 
 /// EventTree describes a simulation, optionally branching into alternative events. All nodes
@@ -20,7 +23,7 @@ impl<T: Copy> EventTree<T> {
 
     /// Attach another EventTree<T> into self.
     fn add_branch(&mut self, branch: EventTree<T>) {
-        self.branches.push(branch)
+        self.branches.push(Rc::new(RefCell::new(branch)))
     }
 
     /// Generate vectors of T => T functions representing unique call chains through this
@@ -34,7 +37,7 @@ impl<T: Copy> EventTree<T> {
         }
         else {
             for branch in &self.branches {
-                let from_branch = branch.operation_chains();
+                let from_branch = branch.borrow().operation_chains();
                 for chain in from_branch {
                     let mut current = OperationChain::new();
                     current.push(self.operation);
@@ -66,14 +69,14 @@ impl<T: Copy> EventTree<T> {
     fn evaluate_depth(&self, payload: T) -> OperationResults<T> {
         let mut results = OperationResults::new();
         let current = (self.operation)(payload);
-        let mut extension = match &self.branches {
+        let extension = match &self.branches {
             branches if branches.len() == 0 => {
                 vec![current]
             }
             branches => {
                 branches
                     .iter()
-                    .map(|branch| branch.evaluate_depth(current))
+                    .map(|branch| branch.borrow().evaluate_depth(current))
                     .flatten()
                     .collect()
             }
