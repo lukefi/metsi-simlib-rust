@@ -5,10 +5,12 @@ type Operation<T> = fn(T) -> T;
 type OperationChain<T> = Vec<Operation<T>>;
 type OperationResults<T> = Vec<T>;
 type UniqueChains<T> = Vec<OperationChain<T>>;
+type TreeNode<T> = Rc<RefCell<EventTree<T>>>;
+type TreeNodes<T> = Vec<TreeNode<T>>;
 
 pub struct EventTree<T> {
     operation: Operation<T>,
-    branches: Vec<Rc<RefCell<EventTree<T>>>>
+    branches: TreeNodes<T>
 }
 
 /// EventTree describes a simulation, optionally branching into alternative events. All nodes
@@ -24,6 +26,25 @@ impl<T: Copy> EventTree<T> {
     /// Attach another EventTree<T> into self.
     fn add_branch(&mut self, branch: EventTree<T>) {
         self.branches.push(Rc::new(RefCell::new(branch)))
+    }
+
+    fn is_leaf(&self) -> bool {
+        return self.branches.len() == 0
+    }
+
+    /// Obtain mutable borrows for leaf nodes of this EventTree<T>
+    fn collect_leaf_nodes(&self) -> TreeNodes<T> {
+        let mut result = Vec::new();
+
+        for branch in &self.branches {
+            if !branch.borrow().is_leaf() {
+                result.extend(branch.borrow().collect_leaf_nodes())
+            }
+            else {
+                result.push(Rc::clone(branch))
+            }
+        }
+        return result;
     }
 
     /// Generate vectors of T => T functions representing unique call chains through this
@@ -127,5 +148,25 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0], 3);
         assert_eq!(results[1], 3);
+    }
+
+    #[test]
+    fn tree_is_extensible() {
+        let root = create_fixture();
+        let mut chains = root.operation_chains();
+        assert_eq!(chains.len(), 2);
+        assert_eq!(chains[0].len(), 3);
+        assert_eq!(chains[1].len(), 3);
+
+        let leafs = root.collect_leaf_nodes();
+        for leaf in leafs {
+            let extension = EventTree::new(increment);
+            leaf.borrow_mut().add_branch(extension);
+        }
+
+        chains = root.operation_chains();
+        assert_eq!(chains.len(), 2);
+        assert_eq!(chains[0].len(), 4);
+        assert_eq!(chains[1].len(), 4);
     }
 }
