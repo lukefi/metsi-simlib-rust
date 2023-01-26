@@ -2,11 +2,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 type Operation<T> = fn(T) -> T;
-type OperationChain<T> = Vec<Operation<T>>;
+pub type OperationChain<T> = Vec<Operation<T>>;
 type OperationResults<T> = Vec<T>;
 type UniqueChains<T> = Vec<OperationChain<T>>;
-type EventNode<T> = Rc<RefCell<EventDAG<T>>>;
-type EventNodes<T> = Vec<EventNode<T>>;
+pub type EventNode<T> = Rc<RefCell<EventDAG<T>>>;
+pub type EventNodes<T> = Vec<EventNode<T>>;
 
 pub struct EventDAG<T> {
     operation: Operation<T>,
@@ -19,8 +19,12 @@ pub struct EventDAG<T> {
 /// for moving ownership into alternative event branches.
 impl<T: Copy> EventDAG<T> {
     /// Construct a new EventDAG<T> node with given Operation<T> function reference
-    pub fn new(operation: Operation<T>) -> EventDAG<T> {
+    fn new(operation: Operation<T>) -> EventDAG<T> {
         EventDAG { operation, followers: Vec::new()}
+    }
+
+    pub fn new_node(operation: Operation<T>) -> EventNode<T> {
+        Rc::new(RefCell::new(EventDAG { operation, followers: Vec::new()}))
     }
 
     /// Attach another EventDAG<T> into self.
@@ -28,7 +32,7 @@ impl<T: Copy> EventDAG<T> {
         self.followers.push(Rc::new(RefCell::new(branch)))
     }
 
-    fn add_follower_node(&mut self, node: &EventNode<T>) {
+    pub fn add_follower_node(&mut self, node: &EventNode<T>) {
         self.followers.push(Rc::clone(node))
     }
 
@@ -76,8 +80,8 @@ impl<T: Copy> EventDAG<T> {
 
     /// Evaluate unique function chains represented by this EventDAG<T>, producing their
     /// results as a Vec<T>.
-    fn evaluate_chains(self, payload: T) -> OperationResults<T> {
-        let chains = self.operation_chains();
+    pub fn evaluate_chains(&self, payload: T) -> OperationResults<T> {
+        let chains = &self.operation_chains();
         let mut results = OperationResults::new();
         for chain in chains {
             let mut current: T = payload;
@@ -91,7 +95,7 @@ impl<T: Copy> EventDAG<T> {
 
     /// Evaluate the total computation represented by this EventDAG<T>, producing its results
     /// as a Vec<T>. Recursive pre-order walkthrough is performed.
-    fn evaluate_depth(&self, payload: T) -> OperationResults<T> {
+    pub fn evaluate_depth(&self, payload: T) -> OperationResults<T> {
         let mut results = OperationResults::new();
         let current = (self.operation)(payload);
         let extension = match &self.followers {
