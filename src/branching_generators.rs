@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 use super::event_graph::*;
+pub type GeneratorFn<T> = fn(EventNodes<T>, OperationChain<T>) -> EventNodes<T>;
 
 /// Generate a linear sequence of EventNodes from an OperationChain. Attach it as a follower
 /// into each of the given EventNodes.
@@ -45,6 +47,15 @@ fn alternatives<T: Copy>(previous: EventNodes<T>, operations: OperationChain<T>)
     }
 }
 
+
+/// Get a map of generator functions resolvable from strings.
+pub fn generator_map<T: Copy>() -> HashMap<&'static str, GeneratorFn<T>> {
+    HashMap::from([
+        ("sequence", sequence as GeneratorFn<T>),
+        ("alternatives", alternatives as GeneratorFn<T>)
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,6 +69,17 @@ mod tests {
             ops.push(operation)
         }
         ops
+    }
+
+    #[test]
+    fn test_generator_mapping() {
+        let map = generator_map();
+        let gen_fn = map.get("sequence").unwrap();
+        let generator_root = EventDAG::new_node(do_nothing);
+        let graph = gen_fn(vec![Rc::clone(&generator_root)], create_ops(increment, 2));
+        let result = generator_root.borrow().evaluate_depth(0);
+        assert_eq!(1, graph.len());
+        assert_eq!(2, result[0])
     }
 
     #[test]
