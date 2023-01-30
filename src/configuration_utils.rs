@@ -9,7 +9,7 @@ pub fn bound_operation<'a, T: 'a>(op: ParameteredOperation<'a, T>, params: &'a P
 
 #[cfg(test)]
 mod tests {
-    use crate::operation_utils::*;
+    use crate::configuration_utils::*;
 
     fn parametered_increment(val: i32, params: &ParameterMap) -> i32 {
         let addition = params.get("increase").unwrap().parse::<i32>().unwrap();

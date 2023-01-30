@@ -3,4 +3,4 @@
 
 pub mod event_graph;
 pub mod branching_generators;
-pub mod operation_utils;
+pub mod configuration_utils;
