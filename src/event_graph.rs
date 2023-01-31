@@ -1,15 +1,16 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-type Operation<T> = fn(T) -> T;
-pub type OperationChain<T> = Vec<Operation<T>>;
+pub type UnboundOperation<T> = dyn Fn(T) -> T;
+pub type BoxedOperation<T> = Box<UnboundOperation<T>>;
+pub type OperationChain<T> = Vec<UnboundOperation<T>>;
 type OperationResults<T> = Vec<T>;
-type UniqueChains<T> = Vec<OperationChain<T>>;
+type UniqueChains<T> = Vec<EventNodes<T>>;
 pub type EventNode<T> = Rc<RefCell<EventDAG<T>>>;
 pub type EventNodes<T> = Vec<EventNode<T>>;
 
 pub struct EventDAG<T> {
-    operation: Operation<T>,
+    operation: BoxedOperation<T>,
     followers: EventNodes<T>
 }
 
@@ -19,12 +20,16 @@ pub struct EventDAG<T> {
 /// for moving ownership into alternative event branches.
 impl<T: Copy> EventDAG<T> {
     /// Construct a new EventDAG<T> node with given Operation<T> function reference
-    fn new(operation: Operation<T>) -> EventDAG<T> {
-        EventDAG { operation, followers: Vec::new()}
+    fn new(operation: &'static UnboundOperation<T>) -> EventDAG<T> {
+        EventDAG { operation: Box::new(operation), followers: Vec::new()}
     }
 
-    pub fn new_node(operation: Operation<T>) -> EventNode<T> {
-        Rc::new(RefCell::new(EventDAG { operation, followers: Vec::new()}))
+    pub fn new_node(operation: &'static UnboundOperation<T>) -> EventNode<T> {
+        Rc::new(RefCell::new(EventDAG { operation: Box::new(operation), followers: Vec::new()}))
+    }
+
+    pub fn wrap(self) -> EventNode<T> {
+        Rc::new(RefCell::new(self))
     }
 
     /// Attach another EventDAG<T> into self.
@@ -55,21 +60,21 @@ impl<T: Copy> EventDAG<T> {
         return result;
     }
 
-    /// Generate vectors of T => T functions representing unique call chains through this
+    /// Generate vectors of EventNode<T> representing unique chains through this
     /// EventDAG<T>. Recursive post-order walkthrough of the graph is performed.
-    fn operation_chains(&self) -> UniqueChains<T> {
+    fn node_chains(wrapped_self: EventNode<T>) -> UniqueChains<T> {
         let mut result = UniqueChains::new();
-        if self.followers.len() == 0 {
-            let mut current = OperationChain::new();
-            current.push(self.operation);
+        if wrapped_self.borrow().followers.len() == 0 {
+            let mut current = EventNodes::new();
+            current.push(Rc::clone(&wrapped_self));
             result.push(current);
         }
         else {
-            for branch in &self.followers {
-                let from_branch = branch.borrow().operation_chains();
+            for branch in &wrapped_self.borrow().followers {
+                let from_branch = EventDAG::node_chains(Rc::clone(branch));
                 for chain in from_branch {
-                    let mut current = OperationChain::new();
-                    current.push(self.operation);
+                    let mut current = EventNodes::new();
+                    current.push(Rc::clone(&wrapped_self));
                     current.extend(chain);
                     result.push(current);
                 }
@@ -80,13 +85,13 @@ impl<T: Copy> EventDAG<T> {
 
     /// Evaluate unique function chains represented by this EventDAG<T>, producing their
     /// results as a Vec<T>.
-    pub fn evaluate_chains(&self, payload: T) -> OperationResults<T> {
-        let chains = &self.operation_chains();
+    pub fn evaluate_chains(self, payload: T) -> OperationResults<T> {
+        let chains = EventDAG::node_chains(Rc::new(RefCell::new(self)));
         let mut results = OperationResults::new();
         for chain in chains {
             let mut current: T = payload;
-            for operation in chain {
-                current = operation(current)
+            for node in chain {
+                current = (node.borrow().operation)(current)
             }
             results.push(current)
         }
@@ -121,10 +126,10 @@ mod tests {
 
     fn increment(x: i32) -> i32 { x+1 }
     fn create_fixture() -> EventDAG<i32> {
-        let mut root = EventDAG::new(increment);
-        let mut s1 = EventDAG::new(increment);
-        let b1 = EventDAG::new(increment);
-        let b2 = EventDAG::new(increment);
+        let mut root = EventDAG::new(&increment);
+        let mut s1 = EventDAG::new(&increment);
+        let b1 = EventDAG::new(&increment);
+        let b2 = EventDAG::new(&increment);
         s1.add_branch(b1);
         s1.add_branch(b2);
         root.add_branch(s1);
@@ -134,7 +139,7 @@ mod tests {
     #[test]
     fn chains_are_produced() {
         let root = create_fixture();
-        let chains = root.operation_chains();
+        let chains = EventDAG::node_chains(root.wrap());
         assert_eq!(chains.len(), 2);
         assert_eq!(chains[0].len(), 3);
         assert_eq!(chains[1].len(), 3);
@@ -160,19 +165,19 @@ mod tests {
 
     #[test]
     fn graph_is_extensible() {
-        let root = create_fixture();
-        let mut chains = root.operation_chains();
+        let root = create_fixture().wrap();
+        let mut chains = EventDAG::node_chains(Rc::clone(&root));
         assert_eq!(chains.len(), 2);
         assert_eq!(chains[0].len(), 3);
         assert_eq!(chains[1].len(), 3);
 
-        let leafs = root.collect_leaf_nodes();
+        let leafs = root.borrow().collect_leaf_nodes();
         for leaf in leafs {
-            let extension = EventDAG::new(increment);
+            let extension = EventDAG::new(&increment);
             leaf.borrow_mut().add_branch(extension);
         }
 
-        chains = root.operation_chains();
+        chains = EventDAG::node_chains(Rc::clone(&root));
         assert_eq!(chains.len(), 2);
         assert_eq!(chains[0].len(), 4);
         assert_eq!(chains[1].len(), 4);
@@ -182,11 +187,11 @@ mod tests {
     fn nodes_are_shareable() {
         let root = create_fixture();
         let leafs = root.collect_leaf_nodes();
-        let extension = Rc::new(RefCell::new(EventDAG::new(increment)));
+        let extension = Rc::new(RefCell::new(EventDAG::new(&increment)));
         for leaf in leafs {
             leaf.borrow_mut().add_follower_node(&extension);
         }
-        let chains = root.operation_chains();
+        let chains = EventDAG::node_chains(root.wrap());
         assert_eq!(chains.len(), 2);
         assert_eq!(chains[0].len(), 4);
         assert_eq!(chains[1].len(), 4);
