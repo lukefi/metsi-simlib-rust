@@ -2,6 +2,8 @@
 
 Recreation of https://github.com/lukefi/metsi simulation core as a Rust library.
 
+Development halted in favour of https://github.com/lukefi/metsi-simlib-cpp C++ implementation.
+
 # Getting started
 
 * Obtain Rust. Suggestion is to use https://www.rust-lang.org/tools/install for toolchain management. This project targets the Stable build.
